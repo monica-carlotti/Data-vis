@@ -1,0 +1,827 @@
+---
+title: "C7083 Assignment"
+author: "Monica Carlotti"
+format: pdf
+editor: visual
+prefer-html: true
+execute:
+  echo: false
+---
+
+*Link to GitHub for code: <https://github.com/monica-carlotti/Data-vis>*
+
+## Background
+
+This visual essay explores insights drawn from a Tidy Tuesday challenge, an initiative within the R programming community. The dataset, sourced from Tidy Tuesday challenge [“Global Crop Yields”](https://github.com/rfordatascience/tidytuesday/blob/master/data/2020/2020-09-01/readme.md) and originally from Our World in Data, is the foundation for this analysis. This analysis will primarily focus on the following types of data:
+
+-   Crop yield data for several stable crops over time.
+-   Fertilizer application.
+-   Change in land area used for cereal production since 1961.
+-   Arable land needed to produce a fixed quantity of crops normalized to 1961.
+
+In the subsequent sections, I will provide detailed analyses and insights derived from each of these datasets.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+## Installing Packages and loading libraries
+knitr::opts_chunk$set(echo = TRUE)
+
+options(repos = c(CRAN = "https://cran.r-project.org"))
+
+
+install.packages("plotly")
+install.packages("dplyr")
+install.packages("ggplot2")
+install.packages("tidyverse")
+install.packages("tmap")
+install.packages("gifski")
+install.packages("janitor")
+install.packages("htmlwidgets")
+install.packages("sf")
+install.packages("cowplot")
+
+
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+##load libraries 
+library(tinytex)
+library(plotly)
+library(dplyr)
+library(ggplot2)
+library(tidyverse)
+library(tmap)
+library(tmaptools)
+library(gifski)
+library(janitor)
+library(htmlwidgets)
+library(sf)
+library(cowplot)
+
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+# Download data from Tidy Tuesday GitHub repository and load data
+crop_yields <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/key_crop_yields.csv')
+fertilizer <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/cereal_crop_yield_vs_fertilizer_application.csv')
+tractors <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/cereal_yields_vs_tractor_inputs_in_agriculture.csv')
+land_use <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/land_use_vs_yield_change_in_cereal_production.csv')
+arable_land <- readr::read_csv('https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-09-01/arable_land_pin.csv')
+
+```
+
+## Introduction
+
+Food security exists when all people, at all times, have access to food. Despite global efforts, millions of people face hunger, and the number is on the rise in the aftermath of the pandemic (FAO, WFP, IFAD, UNICEF, WHO, 2020). As the global population is forecast to reach between 8.3 and 10.9 billion by 2050 (Mbow et al., 2019; OECD, 2021), societies prepare to face the challenge of feeding a growing population. A demographic growth of this calibre will require an increase in food supply. Examining data on crop yields, fertilizer application, and changes in land use can help understand the current status in meeting the global demand for increased food supply. For instance, to evaluate whether technological advancements have positively impacted crop yields, thereby contributing to enhanced food production. Additionally, it offers a means to safeguard environmental health. Monitoring factors such as fertilizer application allows us to avoid dependence issues. Equally crucial is tracking the changes to land area used for agricultural production, as it helps identify and address challenges such as habitat destruction and biodiversity loss, promoting a more sustainable and resilient global food system (Winkler et al., 2021).
+
+## Population Boom: Driving the Need for More Food Resources
+
+At the heart of this analysis is the growing world population, which reflects the increasing demand for food resources. As more people join the global community, the demand for food keeps rising, and that's the key factor shaping this analysis into various aspects of agriculture and resource management.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false 
+
+#check data and select pop column
+names(land_use)
+land_use <- land_use %>%
+  rename(TotalPopulation = 'Total population (Gapminder)')
+
+# remove na, select time period and make it in millions
+world_population <- land_use %>% 
+  filter(Entity == "World" & !is.na(Year) & as.numeric(Year) >= 1950) %>%
+  select(TotalPopulation, Year) %>%
+  mutate(Year = as.numeric(Year),
+         TotalPopulation = TotalPopulation/1000000)%>%
+  distinct(Year, .keep_all = TRUE) %>%
+  arrange(Year)
+
+world_population
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+
+#base R plot
+plot(world_population$Year, world_population$TotalPopulation, type = "l",
+     xlab = "Year", ylab = "Total Population (Millions)",
+     main = "Population Increase Over Time (1950-2019)",
+     xlim = c(1950, 2019), col = "blue",  lwd = 2)
+
+# Add custom x-axis labels every 5 years
+axis(1, at = seq(1950, 2019, by = 5))
+
+# Add a grid
+grid()
+```
+
+The global population has witnessed an exponential surge from under 3 billion in 1950 to nearly 8 billion by 2019.
+
+```{r, include=FALSE}
+#| echo: false
+# Filter data for the 2015-2019 excluding specific entities
+latest_year_data <- land_use %>%
+  filter(Year >= 2015 & Year <= 2019, !Entity %in% c("Oceania", "Africa", "Americas", "Asia","Australia & New Zealand", "Caribbean", "Central African Republic", "Central America", "Eastern Africa", "Eastern Asia", "Eastern Europe", "Europe", "European Union", "Land Locked Developing Countries", "Least Developed Countries", "Low Income Food Deficit Countries", "Belgium-Luxembourg", "Melanasia", "Micronesia (region)", "Middle Africa", "Net Food Importing Developing Countries", "Northern Africa", "Northern America", "Northern Europe", "OECD", "Oceania", "Pacific Islands Trust Territory", "Small island developing States", "South America", "South Eastern Asia", "Southern Africa", "Southern Asia", "Southern Europe", "USSR", "Western Africa", "Western Asia", "Western Sahara", "World", "Serbia and Montenegro","Yugoslavia", "North America", "Latin America")) %>%
+  group_by(Entity) %>%
+  summarise(avg_population = mean(TotalPopulation/ 1e6)) %>%
+  arrange(desc(avg_population)) %>%
+  slice_head(n = 10)
+
+
+# Display the top 10 countries for population
+print(latest_year_data)
+```
+
+As of 2019, the ten most populous countries were: China, India, United States, Indonesia, Pakistan, Brazil, Nigeria, Bangladesh, Russia and Japan.\
+*The interactive treemap is available on Github.*
+
+```{r}
+#| eval: false
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+ 
+#this is the interactive treemap - remove eval:false to run
+ plot_ly(
+    data = latest_year_data,
+    labels = ~Entity,
+    parents = ~"Top 10 Countries",
+    values = ~avg_population,
+    type = "treemap",
+    branchvalues = "total"
+  ) %>%
+    layout(title = "Top 10 Countries by Average Population (2015-2019)")
+
+```
+
+## Rising Production: Meeting the Growing Demand for Food
+
+As the population continues to grow, so does the crop yield, highlighting the need for increased food production to meet the growing demand.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#clean df columns
+names(crop_yields)
+crop_yields %>%
+  janitor::clean_names() %>%
+  rename_all(str_remove, "_tonnes.*")
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+#filter to 'world' only data
+world_yield <- filter(crop_yields, Entity =='World')
+
+# Reshape data from wide to long for plotting
+crop_yields_long <- world_yield %>%
+  pivot_longer(cols = -c(Entity, Code, Year), names_to = "Crop", values_to = "Yield")
+#remove the parenthesis for each crop
+crop_yields_long <- crop_yields_long %>%
+  mutate(Crop = gsub("\\(.*\\)", "", Crop))
+
+
+# static ggplot2
+yield_over_time <- 
+ggplot(crop_yields_long, aes(x = Year, y = Yield, color = Crop)) +
+  geom_line() +
+  labs(title = "Crop Yields 1961-2018",
+       x = "Year",
+       y = "Yield (Tonnes per hectare)") +
+  theme_minimal() +
+scale_x_continuous(breaks = seq(1960, 2020, by = 10))
+
+yield_over_time
+```
+
+```{r}
+#| include: true
+#| eval: false
+#| echo: false
+#| error: false
+#| message: false
+
+# this is the same as above but interactive - remove eval:false to run
+#filter to 'world' only data
+world_yield <- filter(crop_yields, Entity =='World')
+
+# Reshape data from wide to long for plotting
+crop_yields_long <- world_yield %>%
+  pivot_longer(cols = -c(Entity, Code, Year), names_to = "Crop", values_to = "Yield")
+#remove the parenthesis for each crop
+crop_yields_long <- crop_yields_long %>%
+  mutate(Crop = gsub("\\(.*\\)", "", Crop))
+
+
+# static ggplot2
+yield_over_time <- 
+ggplot(crop_yields_long, aes(x = Year, y = Yield, color = Crop)) +
+  geom_line() +
+  labs(title = "Crop Yields 1961-2018",
+       x = "Year",
+       y = "Yield (Tonnes per hectare)") +
+  theme_minimal() +
+scale_x_continuous(breaks = seq(1960, 2020, by = 10))
+
+ggplotly(yield_over_time)
+```
+
+Based on the figure, we can deduce that there is a positive trend in global crop production across various crop types. Notably, potatoes, bananas, and cassava emerge as the leading crop varieties with the highest production during the specified period of 1961 to 2018. *The interactive version of this plot is available on Github.*
+
+In the following section, we focus on cereal as a representative example. Cereal holds significance due to its status as a staple food, forming a substantial part of the diet. This category encompasses essential grains such as wheat, rice, maize, and barley. *The animated map, accessible in HTML format and available on GitHub code, visually demonstrates the change in cereal yield over the years.*
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+#geographical packages
+if(!require("magrittr")) install.packages("magrittr") # for the pipe operator %>%
+if(!require("devtools")) install.packages("devtools") # for installing packages from GitHub
+if(!require("rnaturalearth")) devtools::install_github("ropensci/rnaturalearth") 
+
+# Download geographic data as a shapefile
+world_rnatural = rnaturalearth::ne_download(returnclass = "sf")
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+# Select key variables and assign them to a new object
+world_iso = world_rnatural %>% # Pipe operator
+  dplyr::select(NAME_LONG, ISO_A3_EH, POP_EST, GDP_MD, CONTINENT) # Select variables
+
+# Transform the map to fix distortions
+world_projected = world_iso %>% 
+  st_transform("+proj=moll") # Transform the map
+
+# Plot transformed map
+plot(st_geometry(world_projected)) # Plot the map
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#inspect fertiliser data
+head(fertilizer)
+glimpse(fertilizer)
+fertilizer <- fertilizer %>%
+  janitor::clean_names() %>%
+  rename(yield =4, fertilizer_use =5)
+
+#remove continents and regions, keep countries
+values_to_remove <- c("Oceania", "Africa", "Americas", "Asia","Australia & New Zealand", "Caribbean", "Central African Republic", "Central America", "Eastern Africa", "Eastern Asia", "Eastern Europe", "Europe", "European Union", "Land Locked Developing Countries", "Least Developed Countries", "Low Income Food Deficit Countries", "Belgium-Luxembourg", "Melanasia", "Micronesia (region)", "Middle Africa", "Net Food Importing Developing Countries", "Northern Africa", "Northern America", "Northern Europe", "OECD", "Oceania", "Pacific Islands Trust Territory", "Small island developing States", "South America", "South Eastern Asia", "Southern Africa", "Southern Asia", "Southern Europe", "USSR", "Western Africa", "Western Asia", "Western Sahara", "World", "Serbia and Montenegro","Yugoslavia")
+
+# Remove rows 
+fertilizer_tidy <- fertilizer %>%
+  filter(!(entity %in% values_to_remove))
+
+fertilizer_tidy
+
+# Remove "fertilizer_use" and "entity" columns from the fertilizer data frame
+cereal_yield_tidy <- fertilizer_tidy[, -which(names(fertilizer) %in% c("fertilizer_use", "entity"))]
+
+cereal_yield_tidy
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+# Merge the data using dplyr
+combined_df = dplyr::inner_join(world_projected,  # Dataset 1
+                               cereal_yield_tidy,  # Dataset 2
+                               by = c("ISO_A3_EH" = "code"))  # Variables
+
+combined_df
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+# check codes to see if data is clean
+unique_codes <- unique(cereal_yield_tidy$code)
+
+# Number of unique codes
+num_unique_codes <- length(unique_codes)
+
+# Print the unique codes and the number of unique codes
+print(unique_codes)
+print(paste("Number of unique codes:", num_unique_codes))
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#remove OWID labelled which were left behind
+cereal_yield_tidy <- cereal_yield_tidy %>%
+  filter(!startsWith(code, "OWID"))
+
+# Check the number of unique codes in the filtered data
+num_unique_codes_filtered <- length(unique(cereal_yield_tidy$code))
+print(paste("Number of unique codes in the filtered data:", num_unique_codes_filtered))
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+
+#make df for 2018
+year_2018 = combined_df %>%
+  filter(year == "2018")
+#make df for 1961
+year_1961 = combined_df %>%
+  filter(year == "1961")
+
+#plot
+year_1961.g = st_graticule(year_1961)
+tm_shape(year_1961.g) +
+  tm_lines(col = "grey") +
+  tm_shape(year_1961) +
+  tm_polygons("yield", 
+              palette = "Blues", 
+              style = "cont",  # Use continuous style
+              breaks = seq(0, 30, by = 5),  # Set breaks to 0-25
+              border.col = "black") +
+  tm_layout(legend.outside = TRUE, 
+            legend.outside.position = "bottom",
+            legend.frame = TRUE, frame = FALSE, 
+            main.title = "Global cereal yield in 1961", 
+            main.title.position = c("center", "top")) +
+            tm_legend(title = "Yield (t/ha)")
+
+#plot
+year_2018.g = st_graticule(year_2018)
+tm_shape(year_2018.g) +
+  tm_lines(col = "grey") +
+  tm_shape(year_2018) +
+  tm_polygons("yield", 
+              palette = "Blues", 
+              style = "cont",  # Use continuous style
+              breaks = seq(0, 30, by = 5),  # Set breaks to 0-25
+              border.col = "black") +
+  tm_layout(legend.outside = TRUE, 
+            legend.outside.position = "bottom",
+            legend.frame = TRUE, frame = FALSE,
+            main.title = "Global cereal yield in 2018", 
+            main.title.position = c("center", "top")) +
+            tm_legend(title = "Yield (t/ha)", legend.width = 2.5
+                      )
+```
+
+In 1961, only a handful of countries were producing more than 2 tonnes per hectare of cereal, while the majority were yielding very little—less than 1 tonne. Fast forward to 2018, and a significant shift is evident. The majority of the globe is now shaded in blue on the map, reflecting an increase in cereal production. However, the scale has also expanded, with most regions now producing around 10 tonnes per hectare. This transformation over the years underscores a notable increase in the global production of cereals, measured in tonnes per hectare, indicating an increase in agricultural practices contributing to enhanced cereal yields on a worldwide scale.
+
+```{r}
+#| include: false
+#| eval: false
+#| echo: false
+#| error: false
+#| message: false
+
+
+combined_df$year = as.character(combined_df$year)
+
+#range of yield: calculate min and max yield and remove missing values
+min_yield <- min(combined_df$yield, na.rm = TRUE)
+max_yield <- max(combined_df$yield, na.rm = TRUE)
+
+#If I remove the filter - change back below to combined_df instead of filtered
+#Filter data for the years between 1990 and 2019
+filtered_df <- combined_df %>% filter(year %in% 1990:2019)
+
+# Create an empty list to store maps for each iteration
+map_list <- list()
+
+# Get unique combinations of years
+unique_years <- unique(filtered_df$year)
+
+# Loop through each unique year and create a map
+for (current_year in unique_years) {
+  filter_year <- filtered_df %>% filter(year == current_year)
+  
+ # Create color breaks
+  breaks <- 10^seq(log10(min_yield), log10(max_yield), length.out = 6)
+  
+  map <- tm_shape(filter_year) +
+    tm_polygons("yield", palette = "RdYlBu", style = "cont", border.col = "black", breaks = breaks) +
+    tm_facets(free.scales.fill = FALSE) +
+    tm_layout(legend.outside = TRUE, legend.outside.position = "bottom", legend.stack = "horizontal", title = paste("Cereal Yield (t/ha), ", "Year", current_year), title.position = c("center", "top"), title.size= 2.5) 
+
+  map_list[[as.character(current_year)]] <- map
+}
+
+
+#tmsp_mode("plot")
+gifski::save_gif(
+  {
+    for (i in seq_along(map_list)) {
+      print(map_list[[i]])
+    }
+  },
+  "animated_map_test.gif",
+  width = 800, height = 600, delay = 0.3
+)
+
+```
+
+The boost in cereal yields, and crop yield in general, can be the result of several factors. The next part of this analysis will delve deeper into these factors to gain a better understanding of their impact on the increase in cereal production.
+
+## Land Use Efficiency: Are We Making Progress?
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+#Check arable_land for content
+glimpse(arable_land)
+
+#keep only continents data
+values_to_keep <- c("Oceania", "Africa", "Asia", "Northern America", "South America", "Europe")
+
+#clean arable_land 
+arable_land_continents <- arable_land %>% 
+  filter(Entity %in% values_to_keep) %>%
+  mutate(Year = as.numeric(Year)) %>%
+  rename(Continent = Entity)
+
+#check
+arable_land_continents
+glimpse(arable_land_continents)
+```
+
+To start with, the analysis focuses on the arable land needed to produce a set amount of crops by continent from 1961 to 2018. This part of the analysis focuses on continent-level data to capture an overall trend in required arable land. The data is presented as arable land normalized to 1961 (where 1.0 equals 1961), enabling an examination of changes in land efficiency for crop production across continents.
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+# Create a line plot to show the change in arable land over time
+ggplot(arable_land_continents, aes(x = Year, y = `Arable land needed to produce a fixed quantity of crops ((1.0 = 1961))`, group = Continent, color = Continent)) +
+  geom_line() +
+  labs(title = "Arable land needed to produce a fixed quantity of crops by continent",
+       x = "Year",
+       y = "Arable Land Needed, 1 = 1961") +
+  theme_minimal()
+```
+
+From Africa to Oceania, each continent has witnessed significant reductions in the land needed for cultivation. Africa exhibits a 66% reduction, Asia follows with a substantial 79% decrease, Europe with 50%, Northern America at 67%, Oceania with 68%, and South America with 54%. This signals an improvement in land efficiency for crop production and could be due to the advancement in technology and farming methods. Improved efficiency in farming methods is playing a crucial role, ensuring higher yields per hectare.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+#check the percentage of change 1961-2018
+percentage_decrease_overall <- arable_land_continents %>%
+  group_by(Continent) %>%
+  summarise(Percentage_Decrease_Overall = round(100 * (1 - last(`Arable land needed to produce a fixed quantity of crops ((1.0 = 1961))`) / first(`Arable land needed to produce a fixed quantity of crops ((1.0 = 1961))`))))
+
+# Print
+print(percentage_decrease_overall)
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+
+# Filter data for the years 2010-2019
+filtered_data <- fertilizer %>%
+  filter(year >= 2010 & year <= 2019)
+
+# Group by country and calculate the average yield
+average_yield <- filtered_data %>%
+  group_by(entity) %>%
+  summarise(avg_yield = mean(yield, na.rm = TRUE))
+
+# Arrange in descending order and select the top 10
+top_countries <- average_yield %>%
+  arrange(desc(avg_yield)) %>%
+  slice_head(n = 10)
+
+# Create a bar graph for the top 10 producers (2010-2019)
+ggplot(top_countries, aes(x = reorder(entity, -avg_yield), y = avg_yield, fill = entity)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Top 10 Cereal Producers (2010-2019)",
+       x = "Country",
+       y = "Average Yield") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+```
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+# population
+selected_data1 <- land_use %>%
+  filter(Entity == "World", Year >= 1960, Year <= 2018) %>%
+  select(entity = Entity, year = Year, TotalPopulation
+         ) %>%
+  mutate(year = as.numeric(year))
+
+#yield
+selected_data2 <- fertilizer %>%
+  filter(entity == "World", year >= 1960, year <= 2018) %>%
+  select(entity, year, yield)
+
+#fertilizer
+selected_data3 <- fertilizer %>%
+  filter(entity == "World", year >= 1960, year <= 2018) %>%
+  select(entity, year, fertilizer_use)
+
+#arable land
+selected_data4 <- arable_land %>%
+  filter(Entity == "World", Year >= 1960, Year <= 2018) %>%
+  select(Entity, Year, Land = `Arable land needed to produce a fixed quantity of crops ((1.0 = 1961))`)
+
+```
+
+## Fertilizer Usage: The Need to Balance Productivity and Sustainability
+
+To analyse fertilizer usage, data from the years 2000 to 2019 was selected, as records for previous years were largely absent in this dataset.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+#Prepare df
+# Values to keep
+values_to_keep <- c("Oceania", "Africa", "Asia", "Northern America", "South America", "Europe")
+
+# Filter the dataset and convert yield to kg/ha
+filtered_data_kg <- fertilizer %>% 
+  filter(entity %in% values_to_keep, year >= 2000, year <= 2020) %>%
+  mutate(
+    yield = yield * 1000
+  )
+
+# Create a filtered data frame
+filtered_data <- filtered_data_kg %>% 
+  filter(!is.na(yield), !is.na(fertilizer_use))
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+# Plot both cereal yield and fertilizer use with dual y-axes
+ggplot(filtered_data, aes(x = year, group = entity, color = entity)) +
+  geom_line(aes(y = yield), size = 1) +
+  geom_line(aes(y = fertilizer_use * 100, linetype = "Fertilizer"), size = 1) +
+  labs(title = "Cereal Yield and Fertilizer Use Over the Years (2000-2020)",
+       x = "Year",
+       y = "Cereal yield (kg/ha)", 
+       color = "Continent") +
+  theme_minimal() +
+  facet_wrap(~entity, scales = "fixed") +
+  scale_color_manual(values = c("Oceania" = "blue", "Africa" = "red", "Asia" = "green", 
+                                "Northern America" = "purple", "South America" = "orange", 
+                                "Europe" = "brown")) +
+  scale_linetype_manual(name = "Legend", values = c("Fertilizer" = "22"), labels = "Fertilizer") +
+  scale_y_continuous(
+    sec.axis = sec_axis(~./100, name = "Fertilizer Use (kg/ha)", breaks = seq(0, 100, by = 20))
+  )
+```
+
+The analysis is conducted on a continental scale, comparing the upward trajectory of cereal crop yield (left y-axis) with that of fertilizer use (right y-axis represented by a dotted line). Despite the significant difference in scale between the two variables, this visual comparison proves useful in illustrating their parallel increase over the observed period. It's noteworthy that this rising trend is consistent across most continents, except for Oceania and Africa. However, it's essential to recognize that this observation represents a continental overview, and the landscape may vary significantly when examined at the individual country level.
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+# Calculate correlation coefficient for each continent
+correlation_coefficients <- filtered_data %>%
+  group_by(entity) %>%
+  summarize(correlation_coefficient = cor(yield, fertilizer_use))
+
+# Plot using ggplot2
+cropsvsfertilizer <- ggplot(filtered_data, aes(x = yield, y = fertilizer_use, color = entity)) +
+  geom_point(size = 1) +
+  geom_smooth(method = "lm", se = FALSE) +
+  labs(
+    title = "Crop Yield vs. Fertilizer Use (2000-2020)",
+    x = "Crop Yield (kg/ha)",
+    y = "Fertilizer Use (kg/ha)"
+  ) +
+  theme_minimal()
+
+# Print the plot
+print(cropsvsfertilizer)
+```
+
+By checking the correlation between "yield" and "fertilizer use," we can see how they're connected in farming. Looking at each continent, the positive correlations tell us that when more fertilizer is used, the crop yield goes up. Although the strength of this link differs between continents, the overall idea is that more fertilizer means more crops. This suggests that using more fertilizer is one of the reasons why we're growing more crops, along with other things affecting how well farming works.
+
+## Land Change: Agricultural Expansion
+
+The growth in cereal yield is complemented by an additional factor—changes in land use. By examining the data on the change in land area use for cereal production relative to 1961 (1961 = 100).
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+#filter for world
+values_to_keep <- c("World")
+
+land_use_world <- land_use %>% 
+  filter(Entity %in% values_to_keep, Year >= 1960, Year <= 2019) %>%
+  rename(Continent = Entity) %>%
+  filter(complete.cases(`Change to land area used for cereal production since 1961`))
+
+land_use_world
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+# Convert Year to numeric
+land_use_world$Year <- as.numeric(land_use_world$Year)
+
+# Customized ggplot
+custom_plot <- ggplot(land_use_world, aes(x = Year, y = `Change to land area used for cereal production since 1961`)) +
+  geom_line(color = "#e75480", size = 1.5) +
+  labs(title = "Change in Land Area Used for Cereal Production",
+       x = "Year",
+       y = "Land Area Change (100 = 1961)") +
+  scale_x_continuous(limits = c(1960, 2019), breaks = seq(1960, 2019, by = 5)) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, hjust = 0.5, face = "bold"),
+    axis.title.x = element_text(size = 12, margin = margin(t = 10)),
+    axis.title.y = element_text(size = 12, margin = margin(r = 10)),
+    axis.text = element_text(size = 10),
+    legend.position = "none"  # Remove legend if not needed
+  )
+
+# Print 
+print(custom_plot)
+```
+
+The data clearly illustrates a marked expansion in the land area allocated for cereal production, signifying a significant shift in cultivation practices.
+
+::: pagebreak
+:::
+
+## Conclusion
+
+The presented data provides a picture of agricultural dynamics, revealing a growth in population, crop yield, fertilizer utilization, and land changes.
+
+```{r}
+#| include: false
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+# population
+selected_data1 <- land_use %>%
+  filter(Entity == "World", Year >= 1960, Year <= 2018) %>%
+  select(entity = Entity, year = Year, TotalPopulation
+         ) %>%
+  mutate(year = as.numeric(year))
+
+#yield
+selected_data2 <- fertilizer %>%
+  filter(entity == "World", year >= 1960, year <= 2018) %>%
+  select(entity, year, yield)
+
+#fertilizer
+selected_data3 <- fertilizer %>%
+  filter(entity == "World", year >= 1960, year <= 2018) %>%
+  select(entity, year, fertilizer_use)
+
+#arable land
+selected_data4 <- arable_land %>%
+  filter(Entity == "World", Year >= 1960, Year <= 2018) %>%
+  select(Entity, Year, Land = `Arable land needed to produce a fixed quantity of crops ((1.0 = 1961))`)
+
+```
+
+```{r}
+#| include: true
+#| echo: false
+#| error: false
+#| message: false
+#| warning: false
+
+
+# individual plots 
+plot1 <- ggplot(selected_data1, aes(x = year, y = TotalPopulation)) +
+  geom_line(color = "#4285F4", size = 1.5) + 
+  labs(title = "Population Increase",
+       x = "Year",
+       y = "Population (millions)") +
+  scale_x_continuous(limits = c(1960, 2018), breaks = seq(1960, 2018, by = 10)) +
+  theme_minimal() 
+
+plot2 <- ggplot(selected_data2, aes(x = year, y = yield)) +
+  geom_line(color = "#34A853", size = 1.5) +  
+  labs(title = "Yield",
+       x = "Year",
+       y = "Cereal Yield (t/ha)") +
+  scale_x_continuous(limits = c(1960, 2018), breaks = seq(1960, 2018, by = 10)) +
+  theme_minimal() 
+
+plot3 <- ggplot(selected_data3, aes(x = year, y = fertilizer_use)) +
+  geom_line(color = "#FF5733", size = 1.5) + 
+  labs(title = "Fertilizer Use",
+       x = "Year",
+       y = "Fertilizer Use (kg/ha)") +
+  scale_x_continuous(limits = c(1960, 2018), breaks = seq(1960, 2018, by = 10)) +
+  theme_minimal() 
+
+plot4 <- ggplot(selected_data4, aes(x=Year, y= Land)) +
+    geom_line(color = "#FFD700", size = 1.5) + 
+  labs(title = "Arable Land Needed",
+       x = "Year",
+       y = "Land change (1=1961)") +
+  scale_x_continuous(limits = c(1960, 2018), breaks = seq(1960, 2018, by = 10)) +
+  theme_minimal() 
+
+# Combine the plots 
+plot_grid(plot1, plot2, plot3, plot4, ncol = 2, align = 'v', axis = 'l')
+```
+
+This underscores the interconnected dynamics of these factors on a worldwide scale. What's particularly noteworthy is the observed decrease in arable land requirements to produce a fixed quantity of crops compared to 1961 which implies an improvement in agricultural efficiency and productivity, The mix of progress in technology, changes in land use, and improved farming practices collectively contributes to the observed growth in cereal yield. The understanding of these dynamics, including factors beyond those covered here, is crucial for shaping global food production and land management in the face of increasing population pressures and environmental challenges.
+
+## References
+
+-   FAO, WFP, IFAD, UNICEF, WHO, 2020. *The State of Food Security and Nutrition in the World. Transforming food systems for food security, improved nutrition and affordable healthy diets for all.*, Rome: FAO.
+-   Mbow, C., C. Rosenzweig, L.G. Barioni, T.G. Benton, M. Herrero, M. Krishnapillai, E. Liwenga, P. Pradhan, M.G. Rivera-Ferre, T. Sapkota, F.N. Tubiello, Y. Xu. (2019). *Food Security.* In: Climate Change and Land: an IPCC special report on climate change, desertification, land degradation, sustainable land management, food security, and greenhouse gas fluxes in terrestrial ecosystems. Chapter 5. In press. [Available here](https://www.ipcc.ch/site/assets/uploads/2019/11/08_Chapter-5.pdf)
+-   OECD, 2021. *Making Better Policies for Food Systems.* In: Paris: OECD Publishing.
+-   Winkler, K., Fuchs, R., Rounsevell, M. et al. *Global land use changes are four times greater than previously estimated.* Nat Commun 12, 2501 (2021). [DOI: 10.1038/s41467-021-22702-2](https://doi.org/10.1038/s41467-021-22702-2)
+
+::: pagebreak
+:::
+
+## Critique
+
+-   A "Bad" visualisation
+
+    ![](images/bad.jpg)
+
+The graph illustrates the GDP per capita growth needed across various countries and regions to reduce their extreme poverty rates to 3%. There are a few potential areas for improvement. Firstly, the graph is cluttered, with excessive text and data points, potentially overwhelming viewers and decreasing the readability. Clear labelling of most data points is absent, making them not useful to the reader. In addition to this, the use of black and yellow dots as markers, meant to represent countries and regions, could be confusing. Using different shapes as markers would be best, as well as including a legend to define these markers which would improve readability. There is also a lack of label on the x-axis. Finally, the graph lacks explicit mention of the scale, making it challenging to interpret the exact growth percentages represented by the black dots. The scale intervals are not consistent, jumping from 10 to 50 and from 500 to 1000. This type of scale can sometimes exaggerate differences or make changes in the data seem more dramatic than they actually are. Finally, there is no clear significant of the percentages in terms of what is meant with “growth needed” in the y axis.
+
+-   A "Good" visualisation
+
+    ![](images/good.jpg)
+
+The graph presents wood harvest projections spanning from 2010 to 2050. The title of the graph, "The carbon costs of global wood harvests," effectively sets the context for the data presented. The visual is consistent, with the choice of brown as the primary colour which connects with the theme of wood and contributes to a visually pleasant design of the graph. The organisation of the data is straightforward, with each wood harvest type labelled and growth percentages stated to aid the understanding of the projected changes over time. The inclusion of growth percentages alongside volume data provides a further understanding of the projected changes. This dual representation allows to assess not only the increase in wood harvest but also the relative growth rates. As an additional help, the colour-coded legend simplifies the differentiation between wood types. Furthermore, the graph characterises wood fuel and industrial redwood making the information more accessible for non-specialists. Clear axis labels and a well-defined scale range offer essential context, helping viewers comprehend both the data and the timeframe under consideration. Overall, the graph in the image presents complex data in a visually appealing and informative way.
